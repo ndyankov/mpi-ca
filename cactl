@@ -1,0 +1,79 @@
+#!/bin/bash
+
+pid_file=ca.pid
+timing=timing
+
+function job_sub() {
+    # source configuration file
+    . ./config.sh
+    module load $mpimod
+    image="images/$pattern-$id-$width-$steps.pbm"
+    jobfile=ca.job
+
+    mkdir -p images
+    mkdir -p work
+
+    cat > $jobfile << EOF
+#!/bin/bash
+
+# this file was auto-generated
+module load $mpimod
+
+#$ -cwd
+#$ -S /bin/bash
+#$ -o work
+#$ -e work
+#$ -N CA-$id
+
+echo "\$JOB_ID" > $pid_file
+
+export LD_LIBRARY_PATH=./:$LD_LIBRARY_PATH
+export PYTHONPATH=./:$PYTHONPATH
+mpirun -np \$NSLOTS ./ca $id $width $steps $pattern > $image 2>>$timing
+EOF
+
+    #qsub -pe ompix8 8 $jobfile -l h_rt=10:0:0
+    #qsub -pe ompisn $nprocs $jobfile -l h_rt=1:0:0
+    #qsub $jobfile -l h_rt=1:0:0
+    qsub -pe ompi $nprocs $jobfile -l h_rt=1:0:0
+    return $?
+}
+
+function job_stat() {
+    id=`cat $pid_file 2>/dev/null`
+    [[ -z $id ]] && echo "no job found"
+    # this is not fully correct but XML parsing is not our priority
+    #qstat| grep $id | awk -F" " '{print $5}'
+    qstat| grep $id
+}
+
+function job_del() {
+    id=`cat $pid_file 2>/dev/null`
+    [[ -z $id ]] && echo "no job found"
+    qdel $id; ret=$?
+    rm -rf $job_pid
+    return $?
+}
+
+
+case "$1" in 
+    sub)
+        job_sub
+        exit $?
+        ;;
+
+    del)
+        job_del
+        exit $?
+        ;;
+
+    stat)
+        job_stat
+        exit $?
+        ;;
+
+    *)
+        echo "usage: $0 {sub|del|stat}"
+
+esac
+
